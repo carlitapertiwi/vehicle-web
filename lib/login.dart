@@ -1,7 +1,5 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'dashboard.dart';
 import 'register.dart';
@@ -14,24 +12,21 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final usernameController = TextEditingController();
+  final emailController = TextEditingController();
   final passwordController = TextEditingController();
 
   bool obscurePassword = true;
   bool loading = false;
 
-  final String baseUrl =
-      (Uri.base.host == 'localhost' || Uri.base.host == '127.0.0.1')
-      ? 'http://localhost/kendaraan1_api'
-      : 'https://vehiclehub-smkn1.site.je/kendaraan1_api';
-
   Future<void> login() async {
-    final username = usernameController.text.trim();
+    final email = emailController.text.trim();
     final password = passwordController.text.trim();
 
-    if (username.isEmpty || password.isEmpty) {
+    if (email.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Username dan password wajib diisi')),
+        const SnackBar(
+          content: Text('Email dan password wajib diisi'),
+        ),
       );
       return;
     }
@@ -41,35 +36,44 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/login.php'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'username': username, 'password': password}),
+      final response =
+          await Supabase.instance.client.auth.signInWithPassword(
+        email: email,
+        password: password,
       );
-
-      final hasil = jsonDecode(response.body);
 
       if (!mounted) return;
 
-      if (hasil['success'] == true) {
+      if (response.user != null) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const DashboardPage()),
+          MaterialPageRoute(
+            builder: (_) => const DashboardPage(),
+          ),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(hasil['message'] ?? 'Username atau password salah'),
+          const SnackBar(
+            content: Text('Login gagal'),
           ),
         );
       }
+    } on AuthException catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Gagal login: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal login: $e'),
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -81,7 +85,7 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   void dispose() {
-    usernameController.dispose();
+    emailController.dispose();
     passwordController.dispose();
     super.dispose();
   }
@@ -96,7 +100,11 @@ class _LoginPageState extends State<LoginPage> {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFFE3F5FF), Color(0xFF64B5F6), Color(0xFF1565C0)],
+            colors: [
+              Color(0xFFE3F5FF),
+              Color(0xFF64B5F6),
+              Color(0xFF1565C0),
+            ],
           ),
         ),
         child: Center(
@@ -134,17 +142,20 @@ class _LoginPageState extends State<LoginPage> {
 
                   const Text(
                     'Kelola data kendaraan',
-                    style: TextStyle(color: Colors.grey),
+                    style: TextStyle(
+                      color: Colors.grey,
+                    ),
                   ),
 
                   const SizedBox(height: 28),
 
                   TextField(
-                    controller: usernameController,
+                    controller: emailController,
+                    keyboardType: TextInputType.emailAddress,
                     decoration: InputDecoration(
-                      hintText: 'Username',
+                      hintText: 'Email',
                       prefixIcon: const Icon(
-                        Icons.person_outline_rounded,
+                        Icons.email_outlined,
                         color: Color(0xFF3976A8),
                       ),
                       filled: true,

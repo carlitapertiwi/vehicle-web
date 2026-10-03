@@ -1,7 +1,15 @@
 import 'package:flutter/material.dart';
 import 'login.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Supabase.initialize(
+    url: 'https://ohfagclshzeatokvlwas.supabase.co',
+   publishableKey: 'sb_publishable_n6BTz2CGU6Wt-MwcBfL5pQ_YTOwnaS_',
+  );
+
   runApp(const VehicleHub());
 }
 
@@ -15,9 +23,7 @@ class VehicleHub extends StatelessWidget {
       title: 'VehicleHub',
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1565C0),
-        ),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1565C0)),
         scaffoldBackgroundColor: const Color(0xFFF5F8FC),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,

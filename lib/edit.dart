@@ -1,14 +1,16 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class EditPage extends StatefulWidget {
   final Map<String, dynamic> data;
 
-  const EditPage({super.key, required this.data});
+  const EditPage({
+    super.key,
+    required this.data,
+  });
 
   @override
   State<EditPage> createState() => _EditPageState();
@@ -22,15 +24,11 @@ class _EditPageState extends State<EditPage> {
   late TextEditingController warnaController;
   late TextEditingController hargaController;
 
-  final String baseUrl =
-      (Uri.base.host == 'localhost' || Uri.base.host == '127.0.0.1')
-      ? 'http://localhost/kendaraan1_api'
-      : 'https://vehiclehub-smkn1.site.je/kendaraan1_api';
-
   final ImagePicker picker = ImagePicker();
 
   XFile? gambarBaru;
   Uint8List? gambarBytes;
+
   bool loading = false;
 
   @override
@@ -38,20 +36,27 @@ class _EditPageState extends State<EditPage> {
     super.initState();
 
     namaController = TextEditingController(
-      text: widget.data['nama_kendaraan']?.toString() ?? '',
+      text: widget.data['nama_kendaraan']?.toString() ??
+          widget.data['nama_kend']?.toString() ??
+          '',
     );
+
     jenisController = TextEditingController(
       text: widget.data['jenis']?.toString() ?? '',
     );
+
     merkController = TextEditingController(
       text: widget.data['merk']?.toString() ?? '',
     );
+
     tahunController = TextEditingController(
       text: widget.data['tahun']?.toString() ?? '',
     );
+
     warnaController = TextEditingController(
       text: widget.data['warna']?.toString() ?? '',
     );
+
     hargaController = TextEditingController(
       text: widget.data['harga']?.toString() ?? '',
     );
@@ -67,6 +72,8 @@ class _EditPageState extends State<EditPage> {
     hargaController.dispose();
     super.dispose();
   }
+
+  // ================= PILIH GAMBAR =================
 
   Future<void> pilihGambar() async {
     final XFile? hasil = await picker.pickImage(
@@ -84,6 +91,8 @@ class _EditPageState extends State<EditPage> {
     }
   }
 
+  // ================= UPDATE DATA =================
+
   Future<void> updateData() async {
     if (namaController.text.isEmpty ||
         jenisController.text.isEmpty ||
@@ -91,9 +100,11 @@ class _EditPageState extends State<EditPage> {
         tahunController.text.isEmpty ||
         warnaController.text.isEmpty ||
         hargaController.text.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Semua data wajib diisi')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Semua data wajib diisi'),
+        ),
+      );
       return;
     }
 
@@ -102,58 +113,76 @@ class _EditPageState extends State<EditPage> {
     });
 
     try {
-      final uri = Uri.parse('$baseUrl/edit.php');
-      final request = http.MultipartRequest('POST', uri);
+      String? gambarUrl = widget.data['gambar']?.toString();
 
-      request.fields['id'] = widget.data['id'].toString();
-      request.fields['nama_kendaraan'] = namaController.text;
-      request.fields['jenis'] = jenisController.text;
-      request.fields['merk'] = merkController.text;
-      request.fields['tahun'] = tahunController.text;
-      request.fields['warna'] = warnaController.text;
-      request.fields['harga'] = hargaController.text;
+      // ================= UPLOAD GAMBAR BARU =================
 
-      // gambar lama
-      request.fields['gambar_lama'] = widget.data['gambar']?.toString() ?? '';
-
-      // kalau user pilih gambar baru
       if (gambarBaru != null && gambarBytes != null) {
-        request.files.add(
-          http.MultipartFile.fromBytes(
-            'gambar',
-            gambarBytes!,
-            filename: gambarBaru!.name,
-          ),
-        );
+        final String namaFile =
+            '${DateTime.now().millisecondsSinceEpoch}_${gambarBaru!.name}';
+
+        await Supabase.instance.client.storage
+            .from('kendaraan')
+            .uploadBinary(
+              namaFile,
+              gambarBytes!,
+              fileOptions: const FileOptions(
+                upsert: true,
+              ),
+            );
+
+        gambarUrl = Supabase.instance.client.storage
+            .from('kendaraan')
+            .getPublicUrl(namaFile);
       }
 
-      final response = await request.send();
-      final responseBody = await response.stream.bytesToString();
+      // ================= UPDATE DATABASE =================
 
-      // untuk debug: lihat balasan asli server di console
-      debugPrint('RESPON EDIT: $responseBody');
-
-      final data = jsonDecode(responseBody);
+      await Supabase.instance.client
+          .from('kendaraan')
+          .update({
+        'nama_kendaraan': namaController.text.trim(),
+        'jenis': jenisController.text.trim(),
+        'merk': merkController.text.trim(),
+        'tahun': int.tryParse(tahunController.text.trim()),
+        'warna': warnaController.text.trim(),
+        'harga': int.tryParse(hargaController.text.trim()),
+        'gambar': gambarUrl,
+      }).eq('id', widget.data['id']);
 
       if (!mounted) return;
 
-      if (data['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Data kendaraan berhasil diubah')),
-        );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Data kendaraan berhasil diubah'),
+        ),
+      );
 
-        Navigator.pop(context, true);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'] ?? 'Gagal mengubah data')),
-        );
-      }
+      Navigator.pop(context, true);
+    } on StorageException catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal upload gambar: ${e.message}'),
+        ),
+      );
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal mengubah data: ${e.message}'),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Gagal terhubung ke server: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Terjadi kesalahan: $e'),
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -163,9 +192,12 @@ class _EditPageState extends State<EditPage> {
     }
   }
 
+  // ================= BUILD =================
+
   @override
   Widget build(BuildContext context) {
-    final String gambarLama = widget.data['gambar']?.toString() ?? '';
+    final String gambarLama =
+        widget.data['gambar']?.toString() ?? '';
 
     return Scaffold(
       body: Container(
@@ -206,7 +238,9 @@ class _EditPageState extends State<EditPage> {
                         ),
                       ),
                     ),
+
                     const SizedBox(width: 15),
+
                     const Text(
                       'Edit Kendaraan',
                       style: TextStyle(
@@ -239,20 +273,23 @@ class _EditPageState extends State<EditPage> {
                               fit: BoxFit.cover,
                             ),
                           )
-                        : gambarLama.isNotEmpty
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(25),
-                            child: Image.network(
-                              '$baseUrl/gambar.php?file=${Uri.encodeComponent(gambarLama)}',
-                              width: double.infinity,
-                              height: 190,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return const _FotoKosong();
-                              },
-                            ),
-                          )
-                        : const _FotoKosong(),
+                        : gambarLama.isNotEmpty &&
+                                gambarLama.startsWith('http')
+                            ? ClipRRect(
+                                borderRadius:
+                                    BorderRadius.circular(25),
+                                child: Image.network(
+                                  gambarLama,
+                                  width: double.infinity,
+                                  height: 190,
+                                  fit: BoxFit.cover,
+                                  errorBuilder:
+                                      (context, error, stackTrace) {
+                                    return const _FotoKosong();
+                                  },
+                                ),
+                              )
+                            : const _FotoKosong(),
                   ),
                 ),
 
@@ -271,19 +308,32 @@ class _EditPageState extends State<EditPage> {
                         'Nama Kendaraan',
                         Icons.directions_car_rounded,
                       ),
+
                       _field(
                         jenisController,
                         'Jenis (Motor/Mobil)',
                         Icons.category_outlined,
                       ),
-                      _field(merkController, 'Merk', Icons.sell_outlined),
+
+                      _field(
+                        merkController,
+                        'Merk',
+                        Icons.sell_outlined,
+                      ),
+
                       _field(
                         tahunController,
                         'Tahun',
                         Icons.calendar_month_outlined,
                         number: true,
                       ),
-                      _field(warnaController, 'Warna', Icons.palette_outlined),
+
+                      _field(
+                        warnaController,
+                        'Warna',
+                        Icons.palette_outlined,
+                      ),
+
                       _field(
                         hargaController,
                         'Harga',
@@ -334,6 +384,8 @@ class _EditPageState extends State<EditPage> {
     );
   }
 
+  // ================= TEXT FIELD =================
+
   Widget _field(
     TextEditingController controller,
     String hint,
@@ -344,10 +396,14 @@ class _EditPageState extends State<EditPage> {
       padding: const EdgeInsets.only(bottom: 13),
       child: TextField(
         controller: controller,
-        keyboardType: number ? TextInputType.number : TextInputType.text,
+        keyboardType:
+            number ? TextInputType.number : TextInputType.text,
         decoration: InputDecoration(
           hintText: hint,
-          prefixIcon: Icon(icon, color: const Color(0xFF3976A8)),
+          prefixIcon: Icon(
+            icon,
+            color: const Color(0xFF3976A8),
+          ),
           filled: true,
           fillColor: const Color(0xFFF3F9FF),
           border: OutlineInputBorder(
@@ -359,6 +415,8 @@ class _EditPageState extends State<EditPage> {
     );
   }
 }
+
+// ================= FOTO KOSONG =================
 
 class _FotoKosong extends StatelessWidget {
   const _FotoKosong();
@@ -384,7 +442,10 @@ class _FotoKosong extends StatelessWidget {
         SizedBox(height: 4),
         Text(
           'Tekan untuk memilih dari galeri',
-          style: TextStyle(fontSize: 12, color: Color(0xFF63819E)),
+          style: TextStyle(
+            fontSize: 12,
+            color: Color(0xFF63819E),
+          ),
         ),
       ],
     );

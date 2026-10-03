@@ -1,7 +1,6 @@
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'login.dart';
 
@@ -21,11 +20,6 @@ class _RegisterPageState extends State<RegisterPage> {
   bool obscurePassword = true;
   bool loading = false;
 
-  final String baseUrl =
-      (Uri.base.host == 'localhost' || Uri.base.host == '127.0.0.1')
-          ? 'http://localhost/kendaraan1_api'
-          : 'https://vehiclehub-smkn1.site.je/kendaraan1_api';
-
   Future<void> register() async {
     final nama = namaController.text.trim();
     final username = usernameController.text.trim();
@@ -44,33 +38,36 @@ class _RegisterPageState extends State<RegisterPage> {
       return;
     }
 
+    if (password.length < 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Password minimal 6 karakter'),
+        ),
+      );
+      return;
+    }
+
     setState(() {
       loading = true;
     });
 
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/register.php'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
+      final response = await Supabase.instance.client.auth.signUp(
+        email: email,
+        password: password,
+        data: {
           'nama': nama,
           'username': username,
-          'email': email,
-          'password': password,
-        }),
+        },
       );
-
-      final hasil = jsonDecode(response.body);
 
       if (!mounted) return;
 
-      if (hasil['success'] == true) {
+      if (response.user != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Text(
-              hasil['message'] ?? 'Registrasi berhasil',
+              'Registrasi berhasil! Silakan cek email untuk verifikasi.',
             ),
           ),
         );
@@ -81,21 +78,21 @@ class _RegisterPageState extends State<RegisterPage> {
             builder: (_) => const LoginPage(),
           ),
         );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              hasil['message'] ?? 'Registrasi gagal',
-            ),
-          ),
-        );
       }
+    } on AuthException catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Registrasi gagal: ${e.message}'),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Gagal registrasi: $e'),
+          content: Text('Terjadi kesalahan: $e'),
         ),
       );
     } finally {

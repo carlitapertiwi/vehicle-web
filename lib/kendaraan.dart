@@ -1,7 +1,5 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'tambah.dart';
 import 'edit.dart';
@@ -18,16 +16,13 @@ class _KendaraanPageState extends State<KendaraanPage> {
 
   bool loading = true;
 
-  final String baseUrl =
-      (Uri.base.host == 'localhost' || Uri.base.host == '127.0.0.1')
-      ? 'http://localhost/kendaraan1_api'
-      : 'https://vehiclehub-smkn1.site.je/kendaraan1_api';
-
   @override
   void initState() {
     super.initState();
     ambilData();
   }
+
+  // ================= AMBIL DATA =================
 
   Future<void> ambilData() async {
     setState(() {
@@ -35,25 +30,24 @@ class _KendaraanPageState extends State<KendaraanPage> {
     });
 
     try {
-      final response = await http.get(Uri.parse('$baseUrl/kendaraan.php'));
+      final hasil = await Supabase.instance.client
+          .from('kendaraan')
+          .select()
+          .order('id', ascending: false);
 
-      final hasil = jsonDecode(response.body);
+      if (!mounted) return;
 
-      if (hasil['success'] == true) {
-        final List list = hasil['data'];
-
-        setState(() {
-          dataKendaraan = list
-              .map((item) => Map<String, dynamic>.from(item))
-              .toList();
-        });
-      }
+      setState(() {
+        dataKendaraan = List<Map<String, dynamic>>.from(hasil);
+      });
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Gagal mengambil data: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal mengambil data: $e'),
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -63,27 +57,37 @@ class _KendaraanPageState extends State<KendaraanPage> {
     }
   }
 
+  // ================= TAMBAH DATA =================
+
   Future<void> tambahData() async {
     final hasil = await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const TambahPage()),
+      MaterialPageRoute(
+        builder: (_) => const TambahPage(),
+      ),
     );
 
     if (hasil == true) {
       await ambilData();
     }
   }
+
+  // ================= EDIT DATA =================
 
   Future<void> editData(Map<String, dynamic> data) async {
     final hasil = await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => EditPage(data: data)),
+      MaterialPageRoute(
+        builder: (_) => EditPage(data: data),
+      ),
     );
 
     if (hasil == true) {
       await ambilData();
     }
   }
+
+  // ================= HAPUS DATA =================
 
   Future<void> hapusData(Map<String, dynamic> data) async {
     final bool? yakin = await showDialog<bool>(
@@ -91,7 +95,9 @@ class _KendaraanPageState extends State<KendaraanPage> {
       builder: (context) {
         return AlertDialog(
           title: const Text('Hapus Data'),
-          content: const Text('Yakin ingin menghapus kendaraan ini?'),
+          content: const Text(
+            'Yakin ingin menghapus kendaraan ini?',
+          ),
           actions: [
             TextButton(
               onPressed: () {
@@ -103,7 +109,10 @@ class _KendaraanPageState extends State<KendaraanPage> {
               onPressed: () {
                 Navigator.pop(context, true);
               },
-              child: const Text('Hapus', style: TextStyle(color: Colors.red)),
+              child: const Text(
+                'Hapus',
+                style: TextStyle(color: Colors.red),
+              ),
             ),
           ],
         );
@@ -113,35 +122,32 @@ class _KendaraanPageState extends State<KendaraanPage> {
     if (yakin != true) return;
 
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/hapus.php'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'id': data['id']}),
-      );
-
-      final hasil = jsonDecode(response.body);
+      await Supabase.instance.client
+          .from('kendaraan')
+          .delete()
+          .eq('id', data['id']);
 
       if (!mounted) return;
 
-      if (hasil['success'] == true) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Data berhasil dihapus')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Data berhasil dihapus'),
+        ),
+      );
 
-        await ambilData();
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(hasil['message'] ?? 'Gagal menghapus data')),
-        );
-      }
+      await ambilData();
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Gagal terhubung ke server: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal menghapus data: $e'),
+        ),
+      );
     }
   }
+
+  // ================= BUILD =================
 
   @override
   Widget build(BuildContext context) {
@@ -210,140 +216,153 @@ class _KendaraanPageState extends State<KendaraanPage> {
 
               Expanded(
                 child: loading
-                    ? const Center(child: CircularProgressIndicator())
-                    : dataKendaraan.isEmpty
                     ? const Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.directions_car_outlined,
-                              size: 80,
-                              color: Colors.white,
-                            ),
-                            SizedBox(height: 15),
-                            Text(
-                              'Belum ada data kendaraan',
-                              style: TextStyle(
-                                fontSize: 17,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ],
-                        ),
+                        child: CircularProgressIndicator(),
                       )
-                    : RefreshIndicator(
-                        onRefresh: ambilData,
-                        child: ListView.builder(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 18,
-                            vertical: 5,
-                          ),
-                          itemCount: dataKendaraan.length,
-                          itemBuilder: (context, index) {
-                            final data = dataKendaraan[index];
-
-                            final String gambar =
-                                data['gambar']?.toString() ?? '';
-
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 15),
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.90),
-                                borderRadius: BorderRadius.circular(22),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.08),
-                                    blurRadius: 15,
-                                    offset: const Offset(0, 7),
+                    : dataKendaraan.isEmpty
+                        ? const Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.directions_car_outlined,
+                                  size: 80,
+                                  color: Colors.white,
+                                ),
+                                SizedBox(height: 15),
+                                Text(
+                                  'Belum ada data kendaraan',
+                                  style: TextStyle(
+                                    fontSize: 17,
+                                    color: Colors.white,
                                   ),
-                                ],
+                                ),
+                              ],
+                            ),
+                          )
+                        : RefreshIndicator(
+                            onRefresh: ambilData,
+                            child: ListView.builder(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 18,
+                                vertical: 5,
                               ),
-                              child: Row(
-                                children: [
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(16),
-                                    child: gambar.isNotEmpty
-                                        ? Image.network(
-                                            '$baseUrl/gambar.php?file=${Uri.encodeComponent(gambar)}',
-                                            width: 90,
-                                            height: 90,
-                                            fit: BoxFit.cover,
-                                            errorBuilder:
-                                                (context, error, stackTrace) {
-                                                  return _gambarKosong();
-                                                },
-                                          )
-                                        : _gambarKosong(),
+                              itemCount: dataKendaraan.length,
+                              itemBuilder: (context, index) {
+                                final data = dataKendaraan[index];
+
+                                final String gambar =
+                                    data['gambar']?.toString() ?? '';
+
+                                return Container(
+                                  margin: const EdgeInsets.only(
+                                    bottom: 15,
                                   ),
-
-                                  const SizedBox(width: 14),
-
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          data['nama_kendaraan']?.toString() ??
-                                              '-',
-                                          style: const TextStyle(
-                                            fontSize: 17,
-                                            fontWeight: FontWeight.bold,
-                                            color: Color(0xFF0B345F),
-                                          ),
-                                        ),
-
-                                        const SizedBox(height: 5),
-
-                                        Text(
-                                          '${data['jenis'] ?? '-'} • ${data['merk'] ?? '-'} • ${data['tahun'] ?? '-'}',
-                                          style: const TextStyle(
-                                            color: Color(0xFF63819E),
-                                          ),
-                                        ),
-
-                                        const SizedBox(height: 3),
-
-                                        Text(
-                                          '${data['warna'] ?? '-'} • Rp ${data['harga'] ?? '-'}',
-                                          style: const TextStyle(
-                                            color: Color(0xFF63819E),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-
-                                  Column(
-                                    children: [
-                                      IconButton(
-                                        onPressed: () {
-                                          editData(data);
-                                        },
-                                        icon: const Icon(
-                                          Icons.edit_rounded,
-                                          color: Colors.orange,
-                                        ),
-                                      ),
-                                      IconButton(
-                                        onPressed: () {
-                                          hapusData(data);
-                                        },
-                                        icon: const Icon(
-                                          Icons.delete_rounded,
-                                          color: Colors.red,
-                                        ),
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.90),
+                                    borderRadius: BorderRadius.circular(22),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color:
+                                            Colors.black.withOpacity(0.08),
+                                        blurRadius: 15,
+                                        offset: const Offset(0, 7),
                                       ),
                                     ],
                                   ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                      ),
+                                  child: Row(
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius:
+                                            BorderRadius.circular(16),
+                                        child: gambar.isNotEmpty &&
+                                                gambar.startsWith('http')
+                                            ? Image.network(
+                                                gambar,
+                                                width: 90,
+                                                height: 90,
+                                                fit: BoxFit.cover,
+                                                errorBuilder:
+                                                    (context, error,
+                                                        stackTrace) {
+                                                  return _gambarKosong();
+                                                },
+                                              )
+                                            : _gambarKosong(),
+                                      ),
+
+                                      const SizedBox(width: 14),
+
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              data['nama_kendaraan']
+                                                      ?.toString() ??
+                                                  data['nama_kend']?.toString() ??
+                                                  '-',
+                                              style: const TextStyle(
+                                                fontSize: 17,
+                                                fontWeight: FontWeight.bold,
+                                                color: Color(0xFF0B345F),
+                                              ),
+                                            ),
+
+                                            const SizedBox(height: 5),
+
+                                            Text(
+                                              '${data['jenis'] ?? '-'} • '
+                                              '${data['merk'] ?? '-'} • '
+                                              '${data['tahun'] ?? '-'}',
+                                              style: const TextStyle(
+                                                color: Color(0xFF63819E),
+                                              ),
+                                            ),
+
+                                            const SizedBox(height: 3),
+
+                                            Text(
+                                              '${data['warna'] ?? '-'} • '
+                                              'Rp ${data['harga'] ?? '-'}',
+                                              style: const TextStyle(
+                                                color: Color(0xFF63819E),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+
+                                      Column(
+                                        children: [
+                                          IconButton(
+                                            onPressed: () {
+                                              editData(data);
+                                            },
+                                            icon: const Icon(
+                                              Icons.edit_rounded,
+                                              color: Colors.orange,
+                                            ),
+                                          ),
+                                          IconButton(
+                                            onPressed: () {
+                                              hapusData(data);
+                                            },
+                                            icon: const Icon(
+                                              Icons.delete_rounded,
+                                              color: Colors.red,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
               ),
             ],
           ),

@@ -1,9 +1,8 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class TambahPage extends StatefulWidget {
   const TambahPage({super.key});
@@ -27,10 +26,7 @@ class _TambahPageState extends State<TambahPage> {
 
   bool loading = false;
 
-  final String baseUrl =
-      (Uri.base.host == 'localhost' || Uri.base.host == '127.0.0.1')
-      ? 'http://localhost/kendaraan1_api'
-      : 'https://vehiclehub-smkn1.site.je/kendaraan1_api';
+  // ================= PILIH GAMBAR =================
 
   Future<void> pilihGambar() async {
     final XFile? hasil = await picker.pickImage(
@@ -47,6 +43,8 @@ class _TambahPageState extends State<TambahPage> {
       });
     }
   }
+
+  // ================= SIMPAN DATA =================
 
   Future<void> simpanData() async {
     if (namaController.text.isEmpty ||
@@ -66,55 +64,64 @@ class _TambahPageState extends State<TambahPage> {
     });
 
     try {
-      final uri = Uri.parse('$baseUrl/tambah.php');
+      String? gambarUrl;
 
-      final request = http.MultipartRequest('POST', uri);
-
-      request.fields['nama_kendaraan'] = namaController.text;
-      request.fields['jenis'] = jenisController.text;
-      request.fields['merk'] = merkController.text;
-      request.fields['tahun'] = tahunController.text;
-      request.fields['warna'] = warnaController.text;
-      request.fields['harga'] = hargaController.text;
+      // ================= UPLOAD GAMBAR =================
 
       if (gambar != null && gambarBytes != null) {
-        request.files.add(
-          http.MultipartFile.fromBytes(
-            'gambar',
-            gambarBytes!,
-            filename: gambar!.name,
-          ),
-        );
+        final String namaFile =
+            '${DateTime.now().millisecondsSinceEpoch}_${gambar!.name}';
+
+        await Supabase.instance.client.storage
+            .from('kendaraan')
+            .uploadBinary(
+              namaFile,
+              gambarBytes!,
+              fileOptions: const FileOptions(upsert: true),
+            );
+
+        gambarUrl = Supabase.instance.client.storage
+            .from('kendaraan')
+            .getPublicUrl(namaFile);
       }
 
-      final response = await request.send();
+      // ================= SIMPAN KE DATABASE =================
 
-      final responseBody = await response.stream.bytesToString();
-      print(responseBody);
-
-      final data = jsonDecode(responseBody);
+      await Supabase.instance.client.from('kendaraan').insert({
+        'nama_kendaraan': namaController.text.trim(),
+        'jenis': jenisController.text.trim(),
+        'merk': merkController.text.trim(),
+        'tahun': int.tryParse(tahunController.text.trim()),
+        'warna': warnaController.text.trim(),
+        'harga': int.tryParse(hargaController.text.trim()),
+        'gambar': gambarUrl,
+      });
 
       if (!mounted) return;
 
-      if (data['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Kendaraan berhasil ditambahkan')),
-        );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Kendaraan berhasil ditambahkan')),
+      );
 
-        Navigator.pop(context, true);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(data['message'] ?? 'Gagal menyimpan kendaraan'),
-          ),
-        );
-      }
+      Navigator.pop(context, true);
+    } on StorageException catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal upload gambar: ${e.message}')),
+      );
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal menyimpan data: ${e.message}')),
+      );
     } catch (e) {
       if (!mounted) return;
 
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Gagal terhubung ke server: $e')));
+      ).showSnackBar(SnackBar(content: Text('Terjadi kesalahan: $e')));
     } finally {
       if (mounted) {
         setState(() {
@@ -123,6 +130,8 @@ class _TambahPageState extends State<TambahPage> {
       }
     }
   }
+
+  // ================= BUILD =================
 
   @override
   Widget build(BuildContext context) {
@@ -165,7 +174,9 @@ class _TambahPageState extends State<TambahPage> {
                         ),
                       ),
                     ),
+
                     const SizedBox(width: 15),
+
                     const Text(
                       'Tambah Kendaraan',
                       style: TextStyle(
@@ -242,19 +253,24 @@ class _TambahPageState extends State<TambahPage> {
                         'Nama Kendaraan',
                         Icons.directions_car_rounded,
                       ),
+
                       _field(
                         jenisController,
                         'Jenis (Motor/Mobil)',
                         Icons.category_outlined,
                       ),
+
                       _field(merkController, 'Merk', Icons.sell_outlined),
+
                       _field(
                         tahunController,
                         'Tahun',
                         Icons.calendar_month_outlined,
                         number: true,
                       ),
+
                       _field(warnaController, 'Warna', Icons.palette_outlined),
+
                       _field(
                         hargaController,
                         'Harga',
@@ -305,6 +321,8 @@ class _TambahPageState extends State<TambahPage> {
     );
   }
 
+  // ================= TEXT FIELD =================
+
   Widget _field(
     TextEditingController controller,
     String hint,
@@ -328,5 +346,16 @@ class _TambahPageState extends State<TambahPage> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    namaController.dispose();
+    jenisController.dispose();
+    merkController.dispose();
+    tahunController.dispose();
+    warnaController.dispose();
+    hargaController.dispose();
+    super.dispose();
   }
 }
